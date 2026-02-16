@@ -1,71 +1,95 @@
 'use client'
 
 import { supabase } from '@/lib/supabaseClient'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 export default function Home() {
+  const router = useRouter()
+
   const [isLoading, setIsLoading] = useState(false)
+  const [checkingSession, setCheckingSession] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+
+      if (session) {
+        router.replace('/dashboard')
+      } else {
+        setCheckingSession(false)
+      }
+    }
+
+    checkSession()
+  }, [router])
 
   const handleLogin = async () => {
+    setError(null)
     setIsLoading(true)
+
     try {
-      await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: `${window.location.origin}/dashboard`,
         },
       })
-    } finally {
+
+      if (error) {
+        setError('Failed to start authentication. Please try again.')
+        setIsLoading(false)
+      }
+    } catch {
+      setError('Something went wrong. Please try again.')
       setIsLoading(false)
     }
   }
 
+  if (checkingSession) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin w-8 h-8 border-2 border-accent border-t-transparent rounded-full"></div>
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-4">
-      {/* Background decorative element */}
-      <div className="absolute inset-0 -z-10 overflow-hidden">
+    <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-4 relative overflow-hidden">
+
+      <div className="absolute inset-0 -z-10">
         <div className="absolute top-1/4 -right-1/3 w-96 h-96 rounded-full bg-accent/5 blur-3xl"></div>
         <div className="absolute -bottom-1/4 -left-1/4 w-96 h-96 rounded-full bg-secondary/5 blur-3xl"></div>
       </div>
 
       <div className="w-full max-w-md">
-        {/* Logo / Branding */}
+
         <div className="mb-12 text-center">
           <div className="flex items-center justify-center mb-4">
             <div className="w-12 h-12 rounded-lg bg-primary flex items-center justify-center">
               <span className="text-2xl font-light text-primary-foreground">✦</span>
             </div>
           </div>
-          <h1 className="text-4xl font-light tracking-tight text-foreground mb-2">Savora</h1>
+          <h1 className="text-4xl font-light tracking-tight mb-2">
+            Savora
+          </h1>
           <p className="text-muted-foreground font-light">
             Curate, organize, and discover your finest links
           </p>
         </div>
 
-        {/* Value Propositions */}
-        <div className="grid grid-cols-3 gap-3 mb-12">
-          <div className="text-center">
-            <div className="text-2xl mb-2">✨</div>
-            <p className="text-sm font-medium text-foreground">Elegant</p>
-            <p className="text-xs text-muted-foreground mt-1">Refined design</p>
+        {error && (
+          <div className="mb-6 p-3 bg-destructive/10 text-destructive rounded-lg text-sm text-center">
+            {error}
           </div>
-          <div className="text-center">
-            <div className="text-2xl mb-2">⚡</div>
-            <p className="text-sm font-medium text-foreground">Instant</p>
-            <p className="text-xs text-muted-foreground mt-1">Fast & responsive</p>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl mb-2">🔐</div>
-            <p className="text-sm font-medium text-foreground">Secure</p>
-            <p className="text-xs text-muted-foreground mt-1">Your data protected</p>
-          </div>
-        </div>
+        )}
 
-        {/* Login Button */}
         <button
           onClick={handleLogin}
           disabled={isLoading}
-          className="w-full py-3 px-6 bg-primary text-primary-foreground rounded-lg font-medium transition-all duration-200 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          aria-busy={isLoading}
+          className="w-full py-3 px-6 bg-primary text-primary-foreground rounded-lg font-medium transition-all duration-200 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
         >
           {isLoading ? (
             <>
@@ -74,20 +98,30 @@ export default function Home() {
             </>
           ) : (
             <>
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12.48 10.92h8.84c.4-1.1.48-2.1.48-4.12 0-.88-.07-1.72-.32-2.65-.63-2.38-2.95-4.3-5.84-4.3-3.56 0-6.4 2.56-6.4 5.6 0 .08 0 .16 0 .24.02 1.68.01 3.36.02 5.04zm0 0c-.02-1.68-.03-3.36-.02-5.04 0-.08 0-.16 0-.24 0-3.04 2.84-5.6 6.4-5.6 2.89 0 5.21 1.92 5.84 4.3.25.93.32 1.77.32 2.65 0 2.02-.08 3.02-.48 4.12zm-12-3.05c1.7 0 3.08 1.38 3.08 3.08s-1.38 3.08-3.08 3.08-3.08-1.38-3.08-3.08 1.38-3.08 3.08-3.08zm0 6.16c2.44 0 4.42-1.98 4.42-4.42S2.44 4.24 0 4.24 -4.42 6.22 -4.42 8.66 -2.44 12.08 0 12.08z" />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 48 48"
+                className="w-5 h-5"
+              >
+                <path fill="#EA4335" d="M24 9.5c3.54 0 6.7 1.22 9.2 3.6l6.9-6.9C35.6 2.3 30.2 0 24 0 14.8 0 6.7 5.2 2.6 12.8l8 6.2C12.6 13.3 17.8 9.5 24 9.5z"/>
+                <path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.7-2 5-4.3 6.6l6.8 5.3c4-3.7 6.2-9.1 6.2-16.4z"/>
+                <path fill="#FBBC05" d="M10.6 28.9c-.6-1.8-1-3.7-1-5.9s.4-4.1 1-5.9l-8-6.2C1 14.5 0 19.1 0 23s1 8.5 2.6 12.1l8-6.2z"/>
+                <path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.8-5.7l-6.8-5.3c-2 1.3-4.6 2-9 2-6.2 0-11.4-3.8-13.4-9.5l-8 6.2C6.7 42.8 14.8 48 24 48z"/>
               </svg>
               <span>Continue with Google</span>
             </>
           )}
         </button>
 
-        {/* Footer */}
         <p className="text-center text-xs text-muted-foreground mt-8">
-          By signing in, you agree to our <br className="hidden sm:inline" />
-          <a href="#" className="hover:text-foreground transition-colors">Terms of Service</a>
-          {' '} and {' '}
-          <a href="#" className="hover:text-foreground transition-colors">Privacy Policy</a>
+          By signing in, you agree to our{' '}
+          <a href="#" className="hover:text-foreground transition-colors">
+            Terms of Service
+          </a>{' '}
+          and{' '}
+          <a href="#" className="hover:text-foreground transition-colors">
+            Privacy Policy
+          </a>
         </p>
       </div>
     </div>
