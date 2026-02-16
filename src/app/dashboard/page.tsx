@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 
@@ -21,21 +21,22 @@ export default function Dashboard() {
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(true)
   const [isAdding, setIsAdding] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const loadUser = async () => {
+    const init = async () => {
       const { data: { session } } = await supabase.auth.getSession()
 
       if (!session) {
         router.replace('/')
-      } else {
-        setUser(session.user)
-        fetchBookmarks()
-        setLoading(false)
+        return
       }
+
+      setUser(session.user)
+      setLoading(false)
     }
 
-    loadUser()
+    init()
 
     const { data: listener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
@@ -48,7 +49,9 @@ export default function Dashboard() {
     }
   }, [router])
 
-  const fetchBookmarks = async () => {
+  const fetchBookmarks = useCallback(async () => {
+    if (!user) return
+
     const { data, error } = await supabase
       .from('bookmarks')
       .select('*')
@@ -57,38 +60,76 @@ export default function Dashboard() {
     if (!error && data) {
       setBookmarks(data)
     }
-  }
+  }, [user])
+
+  useEffect(() => {
+    fetchBookmarks()
+  }, [fetchBookmarks])
 
   const addBookmark = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!title || !url || !user) return
 
+    setError(null)
     setIsAdding(true)
-    try {
-      const { error } = await supabase.from('bookmarks').insert({
+
+    const tempId = crypto.randomUUID()
+
+    const optimisticBookmark: Bookmark = {
+      id: tempId,
+      title,
+      url,
+      user_id: user.id,
+      created_at: new Date().toISOString(),
+    }
+
+    setBookmarks((prev) => [optimisticBookmark, ...prev])
+    setTitle('')
+    setUrl('')
+
+    const { data, error } = await supabase
+      .from('bookmarks')
+      .insert({
         title,
         url,
         user_id: user.id,
       })
+      .select()
+      .single()
 
-      if (!error) {
-        setTitle('')
-        setUrl('')
-      }
-    } finally {
-      setIsAdding(false)
+    if (error) {
+      setError('Failed to add bookmark.')
+      setBookmarks((prev) => prev.filter((b) => b.id !== tempId))
+    } else {
+      setBookmarks((prev) =>
+        prev.map((b) => (b.id === tempId ? data : b))
+      )
     }
+
+    setIsAdding(false)
   }
 
   const deleteBookmark = async (id: string) => {
-    await supabase.from('bookmarks').delete().eq('id', id)
+    const previous = bookmarks
+
+    setBookmarks((prev) => prev.filter((b) => b.id !== id))
+
+    const { error } = await supabase
+      .from('bookmarks')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      setBookmarks(previous)
+      setError('Failed to delete bookmark.')
+    }
   }
 
   useEffect(() => {
     if (!user) return
 
     const channel = supabase
-      .channel('bookmarks-changes')
+      .channel('bookmarks-realtime')
       .on(
         'postgres_changes',
         {
@@ -99,7 +140,11 @@ export default function Dashboard() {
         },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            setBookmarks((prev) => [payload.new as Bookmark, ...prev])
+            setBookmarks((prev) => {
+              const exists = prev.find((b) => b.id === payload.new.id)
+              if (exists) return prev
+              return [payload.new as Bookmark, ...prev]
+            })
           }
 
           if (payload.eventType === 'DELETE') {
@@ -123,160 +168,107 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-8 h-8 border-2 border-accent/30 border-t-accent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading your collection...</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin w-8 h-8 border-2 border-accent border-t-transparent rounded-full"></div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      {/* Background decorative elements */}
-      <div className="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 -right-1/3 w-96 h-96 rounded-full bg-accent/5 blur-3xl"></div>
-        <div className="absolute -bottom-1/4 -left-1/4 w-96 h-96 rounded-full bg-secondary/5 blur-3xl"></div>
+    <div className="max-w-4xl mx-auto p-8">
+
+      <div className="flex justify-between items-center mb-10">
+        <div>
+          <h1 className="text-2xl font-semibold">Savora</h1>
+          <p className="text-sm text-muted-foreground">
+            {user?.email}
+          </p>
+        </div>
+        <button
+          onClick={logout}
+          className="text-destructive hover:underline"
+        >
+          Sign Out
+        </button>
       </div>
 
-      {/* Header */}
-      <header className="border-b border-border sticky top-0 bg-background/80 backdrop-blur-sm">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex justify-between items-center">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
-                <span className="text-xl font-light text-primary-foreground">✦</span>
-              </div>
-              <h1 className="text-2xl font-light tracking-tight">Savora</h1>
-            </div>
-            <p className="text-sm text-muted-foreground">Welcome back, {user?.email}</p>
-          </div>
-          <button
-            onClick={logout}
-            className="px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-          >
-            Sign Out
-          </button>
+      {error && (
+        <div className="mb-6 p-3 bg-destructive/10 text-destructive rounded-lg text-sm">
+          {error}
         </div>
-      </header>
+      )}
 
-      {/* Main Content */}
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Add Bookmark Section */}
-        <div className="mb-12">
-          <h2 className="text-lg font-medium mb-4 text-foreground">Add New Bookmark</h2>
-          <form onSubmit={addBookmark} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">
-                  Title
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g., Design Inspiration"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full px-4 py-3 bg-card border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">
-                  URL
-                </label>
-                <input
-                  type="url"
-                  placeholder="https://example.com"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  className="w-full px-4 py-3 bg-card border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all"
-                  required
-                />
-              </div>
-            </div>
-            <button
-              type="submit"
-              disabled={isAdding || !title || !url}
-              className="w-full md:w-auto px-8 py-3 bg-accent text-accent-foreground font-medium rounded-lg hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
-            >
-              {isAdding ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-accent-foreground/30 border-t-accent-foreground rounded-full animate-spin"></div>
-                  <span>Adding...</span>
-                </>
-              ) : (
-                <>
-                  <span>+</span>
-                  <span>Save Bookmark</span>
-                </>
-              )}
-            </button>
-          </form>
-        </div>
+      <form onSubmit={addBookmark} className="grid md:grid-cols-2 gap-4 mb-10">
+        <input
+          type="text"
+          placeholder="Title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="p-3 border rounded-lg"
+          required
+        />
+        <input
+          type="url"
+          placeholder="https://example.com"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          className="p-3 border rounded-lg"
+          required
+        />
+        <button
+          type="submit"
+          disabled={isAdding}
+          className="md:col-span-2 bg-accent text-white p-3 rounded-lg"
+        >
+          {isAdding ? 'Adding...' : 'Add Bookmark'}
+        </button>
+      </form>
 
-        {/* Bookmarks Section */}
-        <div>
-          <h2 className="text-lg font-medium mb-6 text-foreground">
-            Your Collection
-            {bookmarks.length > 0 && (
-              <span className="text-muted-foreground font-normal ml-2">
-                ({bookmarks.length} {bookmarks.length === 1 ? 'item' : 'items'})
-              </span>
-            )}
-          </h2>
+      {bookmarks.length === 0 ? (
+        <p className="text-muted-foreground text-center">
+          No bookmarks yet.
+        </p>
+      ) : (
+        <div className="grid gap-4">
+          {bookmarks.map((bookmark) => {
+            let hostname = ''
+            try {
+              hostname = new URL(bookmark.url).hostname
+            } catch {
+              hostname = bookmark.url
+            }
 
-          {bookmarks.length === 0 ? (
-            <div className="text-center py-16">
-              <div className="text-4xl mb-4 opacity-30">📚</div>
-              <p className="text-muted-foreground mb-4">No bookmarks yet</p>
-              <p className="text-sm text-muted-foreground">
-                Add your first bookmark to get started building your collection
-              </p>
-            </div>
-          ) : (
-            <div className="grid gap-4">
-              {bookmarks.map((bookmark) => (
-                <div
-                  key={bookmark.id}
-                  className="group bg-card border border-border rounded-lg p-6 hover:border-accent/50 transition-all hover:shadow-sm"
-                >
-                  <div className="flex justify-between items-start gap-4">
-                    <div className="flex-1 min-w-0">
-                      <a
-                        href={bookmark.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-accent hover:text-accent/80 font-medium mb-2 block truncate transition-colors"
-                        title={bookmark.title}
-                      >
-                        {bookmark.title}
-                      </a>
-                      <p className="text-sm text-muted-foreground truncate">
-                        {new URL(bookmark.url).hostname}
-                      </p>
-                      <time className="text-xs text-muted-foreground/70 mt-2 block">
-                        {new Date(bookmark.created_at).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
-                      </time>
-                    </div>
-                    <button
-                      onClick={() => deleteBookmark(bookmark.id)}
-                      className="px-3 py-2 text-sm text-destructive hover:bg-destructive/10 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-                      title="Delete bookmark"
-                    >
-                      ✕
-                    </button>
-                  </div>
+            return (
+              <div
+                key={bookmark.id}
+                className="border rounded-lg p-5 flex justify-between items-start"
+              >
+                <div>
+                  <a
+                    href={bookmark.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-accent"
+                  >
+                    {bookmark.title}
+                  </a>
+                  <p className="text-sm text-muted-foreground">
+                    {hostname}
+                  </p>
                 </div>
-              ))}
-            </div>
-          )}
+
+                <button
+                  onClick={() => deleteBookmark(bookmark.id)}
+                  className="text-destructive"
+                >
+                  ✕
+                </button>
+              </div>
+            )
+          })}
         </div>
-      </main>
+      )}
     </div>
   )
 }
+//priyankar
