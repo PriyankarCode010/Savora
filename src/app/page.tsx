@@ -7,6 +7,8 @@ import { motion } from 'framer-motion'
 import { ArrowRight, Sparkles, Shield, Zap, Globe, Loader2 } from 'lucide-react'
 import { Logo } from '@/components/Logo'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import Image from 'next/image'
+
 
 export default function Home() {
   const router = useRouter()
@@ -120,7 +122,7 @@ export default function Home() {
           </motion.div>
 
           {/* Dashboard Preview / Mockup */}
-          <motion.div
+          {/* <motion.div
             initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.2 }}
@@ -129,11 +131,30 @@ export default function Home() {
             <div className="absolute inset-0 bg-primary/5 blur-[120px] -z-10 rounded-full" />
             <div className="rounded-3xl border border-border/50 bg-card/50 backdrop-blur-sm p-4 shadow-2xl overflow-hidden aspect-[16/10] md:aspect-[16/9]">
                <div className="w-full h-full rounded-2xl bg-secondary/30 flex items-center justify-center border border-border/20">
-                  <div className="flex flex-col items-center gap-4 text-muted-foreground opacity-40">
-                    <Globe className="w-16 h-16" />
-                    <p className="font-medium tracking-widest uppercase text-xs">Premium Dashboard Preview</p>
-                  </div>
+                  <image src="public/image.png" ></image>
                </div>
+            </div>
+          </motion.div> */}
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.2 }}
+            className="mt-24 relative max-w-5xl mx-auto"
+          >
+            <div className="absolute inset-0 bg-primary/5 blur-[120px] -z-10 rounded-full" />
+
+            <div className="rounded-3xl border border-border/50 bg-card/50 backdrop-blur-sm p-4 shadow-2xl overflow-hidden aspect-[16/10] md:aspect-[16/9]">
+              <div className="relative w-full h-full rounded-2xl overflow-hidden border border-border/20">
+                
+                <Image
+                  src="/image.png"
+                  alt="Savora dashboard preview"
+                  fill
+                  className="object-cover"
+                  priority
+                />
+
+              </div>
             </div>
           </motion.div>
         </section>
